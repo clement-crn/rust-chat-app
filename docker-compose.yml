@@ -1,0 +1,68 @@
+services:
+  database:
+    build:
+      context: database
+      dockerfile: Dockerfile
+    restart: always
+    shm_size: 1g
+    environment: 
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    expose:
+      - ${DATABASE_PORT}
+    networks:
+      - database
+    volumes:
+      - database:/var/lib/postgresql/data
+
+  reverse-proxy:
+    image: traefik:v2.5
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - 80:80
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - reverse-proxy
+
+
+  backend:
+    image: backend
+    build:
+      context: ./backend/server
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - ./backend/.env
+      - .env
+    depends_on:
+      - reverse-proxy
+      - database
+    expose:
+      - ${HTTP_PORT}
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=reverse-proxy
+      - traefik.http.routers.backend.rule=Host(`${BACKEND_DOMAIN}`)
+    networks:
+      - reverse-proxy
+      - database
+    volumes:
+      - ./backend/seeds/imports:/home/node/seeds/imports
+    logging:
+      driver: json-file
+      options:
+        max-size: 50m
+        mode: non-blocking
+
+networks:
+  reverse-proxy:
+    name: reverse-proxy
+  database:  
+
+volumes:
+  database:
